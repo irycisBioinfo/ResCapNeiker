@@ -15,6 +15,7 @@ library(easystats)
 library(ggstatsplot)
 library(dplyr)
 library(emmeans)
+library(DT)
 ```
 
 # Loading data
@@ -39,6 +40,7 @@ tabla <- read_csv("./miguel/neiker/tabla_inicial.csv")
 
 ## Filter and Transform
 
+
 ```{r}
 tabla_otu <- tabla %>% 
   filter(template_identity > 95 & template_coverage > 95) %>% 
@@ -52,6 +54,20 @@ tabla_otu <- tabla %>%
   summarise(depth = sum(depth)) %>% 
   pivot_wider(names_from = gene, values_from = depth, values_fill = 0)
 ```
+### Raw OTU Table.
+```{r}
+tabla_otu %>% 
+  datatable(extensions = "Buttons", 
+            options = list(paging = TRUE,
+                           scrollX=TRUE, 
+                           searching = TRUE,
+                           ordering = TRUE,
+                           dom = 'Bfrtip',
+                           buttons = c('copy', 'csv', 'excel', 'pdf'),
+                           pageLength=5, 
+                           lengthMenu=c(3,5,10) ))
+```
+
 
 ## Load Metadata
 
@@ -216,7 +232,6 @@ rare_table <- full_tabla %>%
   as.matrix() %>% 
   rrarefy( sample = MinSampleSize)
 
-
 Div <- inner_join(
   data.frame(Simpson = diversity(rare_table, index = "simpson"),
             Shannon = diversity(rare_table, index = "shannon")) %>% 
@@ -299,6 +314,24 @@ Div %>%
   theme_light() + coord_flip()
 
 ```
+
+## Normalized Data.
+```{r}
+rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  datatable(extensions = "Buttons", 
+            options = list(paging = TRUE,
+                           scrollX=TRUE, 
+                           searching = TRUE,
+                           ordering = TRUE,
+                           dom = 'Bfrtip',
+                           buttons = c('copy', 'csv', 'excel', 'pdf'),
+                           pageLength=5, 
+                           lengthMenu=c(3,5,10) ))
+```
+
+
 
 ```{r}
 ggbetweenstats(x = toma,
@@ -536,7 +569,16 @@ test_table %>%
   mutate(padj = p.adjust(p,method = "fdr")) %>% 
   filter(padj < 0.05) %>% 
   inner_join(labels, by= c("Gene"="template")) %>% 
-  relocate(label)
+  relocate(label) %>% 
+  datatable(extensions = "Buttons", 
+            options = list(paging = TRUE,
+                           scrollX=TRUE, 
+                           searching = TRUE,
+                           ordering = TRUE,
+                           dom = 'Bfrtip',
+                           buttons = c('copy', 'csv', 'excel', 'pdf'),
+                           pageLength=5, 
+                           lengthMenu=c(3,5,10) ))
 
 
 significativos <- test_table %>% 
@@ -780,7 +822,16 @@ test_table_toma3 %>%
   mutate(padj = p.adjust(p,method = "fdr")) %>% 
   filter(padj < 0.05) %>% 
   inner_join(labels, by= c("Gene"="template")) %>% 
-  relocate(label)
+  relocate(label) %>% 
+  datatable(extensions = "Buttons", 
+            options = list(paging = TRUE,
+                           scrollX=TRUE, 
+                           searching = TRUE,
+                           ordering = TRUE,
+                           dom = 'Bfrtip',
+                           buttons = c('copy', 'csv', 'excel', 'pdf'),
+                           pageLength=5, 
+                           lengthMenu=c(3,5,10) ))
 
 
 significativos_toma3 <- test_table %>% 
