@@ -1,0 +1,824 @@
+---
+title: "Neiker"
+author: "Val F. Lanza"
+format: html
+fig-format: svg
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(vegan)
+library(ggsci)
+library(gamlss)
+library(easystats)
+library(ggstatsplot)
+library(dplyr)
+library(emmeans)
+```
+
+# Loading data
+
+```{r message=FALSE, warning=F}
+# files <- dir(".", pattern = "res")
+# 
+# tabla <- data.frame()
+# 
+# for (i in files)
+# {
+#   tmp <- read_tsv(i)
+#   sample <- gsub(".res","",i)
+#   tmp$Sample <- sample
+#   
+#   tabla <- bind_rows(tabla,tmp)
+# }
+
+tabla <- read_csv("./miguel/neiker/tabla_inicial.csv")
+
+```
+
+## Filter and Transform
+
+```{r}
+tabla_otu <- tabla %>% 
+  filter(template_identity > 95 & template_coverage > 95) %>% 
+  group_by(dataset,template) %>% 
+  summarise(depth = max(depth), 
+            template_coverage = max(template_coverage), 
+            template_identity = max(template_identity)) %>% 
+  ungroup() %>% 
+  dplyr::select(Sample = dataset,gene = template, depth) %>%
+  group_by(Sample,gene) %>% 
+  summarise(depth = sum(depth)) %>% 
+  pivot_wider(names_from = gene, values_from = depth, values_fill = 0)
+```
+
+## Load Metadata
+
+```{r}
+
+metadata <- readxl::read_xlsx("Metadata.xlsx")
+
+metadata <- metadata %>% 
+  rename(Sample = Muestra) %>% 
+  mutate(toma = as.character(`Fecha de muestreo`))
+  
+  
+full_tabla <- tabla %>% inner_join(metadata %>% mutate(dataset = str_c("Sample_",Sample)))
+
+stats <- read_table("stats.tsv")
+lista_run <- read_tsv("lista.txt", col_names = c("Run","file")) %>% 
+  mutate(file = gsub(".fastq.gz",".clean.fastq.gz",file))
+
+stats <- stats %>% inner_join(lista_run) %>% 
+  separate(file, c("Pool","Sample","Pos","line","Read","kk"), sep ="_") %>% 
+  mutate(Sample = paste0("Sample_",Sample)) %>% 
+  group_by(Sample,Run) %>% summarise(num_seqs = sum(num_seqs), sum_len = sum(sum_len))
+
+labels <- full_tabla %>% mutate(label = ifelse(database =="BAC",Gene_name,template)) %>% dplyr::select(template,label) %>% distinct()
+
+
+
+full_tabla %>% inner_join(stats, by = c("dataset" = "Sample")) %>% 
+  group_by(Sample, num_seqs, Run) %>% 
+  summarise(ToalDepth = sum(depth)) %>% 
+  ungroup() %>% 
+  pivot_longer(names_to = "Type", values_to = "Value", -c(Sample,Run)) %>% 
+  ggplot(aes(x = Sample, y = Value, fill =Type)) + 
+  geom_col(position = "stack") + 
+  facet_grid(Run ~., scales = "free_y") + 
+  coord_flip() +
+  scale_fill_d3()
+
+
+
+full_tabla %>% inner_join(stats, by = c("dataset" = "Sample")) %>% 
+  group_by(Sample, TotalReads = num_seqs, Run) %>% 
+  summarise(OnTarget = sum(depth)) %>% 
+  ungroup() %>% 
+  pivot_longer(names_to = "Type", values_to = "Value", -c(Sample,Run)) %>% 
+  #filter(Run != "novaseq694") %>% 
+  ggplot(aes(x = Run, y = Value, fill =Type)) + 
+  geom_boxplot(alpha = 0.8) + 
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(Type ~., scales = "free") + 
+  scale_fill_d3() +
+  theme_light() +
+  scale_y_log10() +
+  theme(axis.text = element_text(angle = 45, hjust = 1))
+
+full_tabla %>% 
+  inner_join(stats, by = c("dataset" = "Sample")) %>% 
+  group_by(Sample, TotalReads = num_seqs, toma) %>% 
+  summarise(OnTarget = sum(depth)) %>% 
+  ungroup() %>% 
+  pivot_longer(names_to = "Type", values_to = "Value", -c(Sample,toma)) %>% 
+  #filter(Run != "novaseq694") %>% 
+  ggplot(aes(x = toma, y = Value, fill =Type)) + 
+  geom_boxplot(alpha = 0.8) + 
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(Type ~., scales = "free") + 
+  scale_fill_d3() +
+  theme_light() +
+  scale_y_log10() +
+  theme(axis.text = element_text(angle = 45, hjust = 1))
+
+
+```
+
+# Quality Control
+
+```{r}
+full_tabla %>% filter(dataset != "Sample_75") %>% 
+  group_by(dataset,`Cambio climático`,Biocidas) %>% 
+  summarise(TotalCounts = sum(depth)) %>% 
+  ggplot(aes(x= dataset, y=TotalCounts, fill = `Cambio climático`)) + 
+  geom_col() +
+  scale_fill_d3() +
+  labs(title = "Total Depth Cambio Climatico") +
+  coord_flip()
+
+full_tabla %>% filter(dataset != "Sample_75") %>% 
+  group_by(dataset,`Cambio climático`,Biocidas) %>% 
+  summarise(TotalCounts = sum(depth)) %>% 
+  ggplot(aes(x= dataset, y=TotalCounts, fill = Biocidas)) + 
+  geom_col() +
+  scale_fill_d3()+
+  labs(title = "Total Depth Biocidas") +
+  coord_flip()
+  
+
+full_tabla %>% filter(dataset != "Sample_75") %>% 
+  group_by(dataset,`Cambio climático`,Biocidas) %>% 
+  summarise(TotalCounts = sum(depth)) %>%
+  ggplot(aes(x= `Cambio climático`, y=TotalCounts, fill = `Cambio climático`)) + 
+  geom_boxplot()+
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  scale_fill_d3()+
+  scale_y_log10()+
+  labs(title = "Total Depth Cambio Climatico")
+
+full_tabla %>% filter(dataset != "Sample_75") %>% 
+  group_by(dataset,`Cambio climático`,Biocidas) %>% 
+  summarise(TotalCounts = sum(depth)) %>% 
+  ggplot(aes(x= Biocidas, y=TotalCounts, fill = Biocidas)) + 
+  geom_boxplot()+
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  scale_fill_d3()+
+  scale_y_log10()+
+  labs(title = "Total Depth Biocidas")
+
+
+full_tabla %>% filter(dataset != "Sample_75") %>% 
+  group_by(dataset,toma) %>% 
+  summarise(TotalCounts = sum(depth)) %>% 
+  ggplot(aes(x= toma, y=TotalCounts, fill = toma)) + 
+  geom_boxplot()+
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  scale_fill_d3()+
+  scale_y_log10()+
+  labs(title = "Total Depth toma")
+
+
+```
+
+```{r}
+
+Validos <- full_tabla %>% 
+  group_by(dataset,template) %>% 
+  summarise(depth = max(depth), 
+            template_coverage = max(template_coverage), 
+            template_identity = max(template_identity)) %>% 
+  ungroup() %>% 
+  group_by(dataset) %>% 
+  summarise(TotalCounts = sum(depth)) %>%
+  filter(TotalCounts > 10000)
+```
+
+# Alpha Diversity
+
+```{r fig.width=15, fig.height=15}
+
+MinSampleSize <- Validos %>% pull(TotalCounts) %>% min()
+
+rare_table <- full_tabla %>% 
+  semi_join(Validos) %>% 
+  group_by(dataset,template) %>% 
+  summarise(depth = max(depth), 
+            template_coverage = max(template_coverage), 
+            template_identity = max(template_identity)) %>% 
+  ungroup() %>% 
+  filter(template_coverage > 85, template_identity > 85) %>% 
+  dplyr::select(dataset, template, depth) %>% 
+  mutate(depth = round(depth)) %>% 
+  pivot_wider(names_from = template, values_from = depth, values_fill =0) %>% 
+  column_to_rownames("dataset") %>% 
+  as.matrix() %>% 
+  rrarefy( sample = MinSampleSize)
+
+
+Div <- inner_join(
+  data.frame(Simpson = diversity(rare_table, index = "simpson"),
+            Shannon = diversity(rare_table, index = "shannon")) %>% 
+    rownames_to_column("Sample"),
+        estimateR(rare_table) %>% 
+    t() %>%
+    as.data.frame() %>%  
+    rownames_to_column("Sample"))
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  ggplot(aes(x = `Cambio climático`, y = Value, fill = `Cambio climático`)) + 
+  geom_boxplot() + 
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~Index, scales = "free") +
+  scale_fill_d3() + 
+  theme_light() + coord_flip()
+
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  ggplot(aes(x = Biocidas, y = Value, fill = Biocidas)) + 
+  geom_boxplot() + 
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~Index, scales = "free") +
+  scale_fill_d3() + 
+  theme_light() + coord_flip()
+
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))
+             ) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  ggplot(aes(x = Combinada, y = Value, fill = Combinada)) + 
+  geom_boxplot() + 
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~Index, scales = "free") +
+  scale_fill_d3() + 
+  theme_light() + coord_flip()
+
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))
+             ) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  ggplot(aes(x = toma, y = Value, fill = toma)) + 
+  geom_boxplot() + 
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~Index, scales = "free") +
+  scale_fill_d3() + 
+  theme_light() + 
+  theme(axis.text = element_text(angle = 45, hjust = 1))
+
+
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))
+             ) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  ggplot(aes(x = Combinada, y = Value, fill = Combinada)) + 
+  geom_boxplot() + 
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(toma~Index, scales = "free") +
+  scale_fill_d3() + 
+  theme_light() + coord_flip()
+
+```
+
+```{r}
+ggbetweenstats(x = toma,
+               y = S.chao1, 
+               data = Div %>% inner_join(metadata %>%                                                                       filter(Sample < 73) %>% 
+                                mutate(Sample = str_c("Sample_",Sample)) %>% 
+                                mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))),
+               type = "robust", title = "Chao Alpha Diversity")
+
+ggbetweenstats(x = toma,
+               y = Shannon, 
+               data = Div %>% inner_join(metadata %>%                                                                       filter(Sample < 73) %>% 
+                                mutate(Sample = str_c("Sample_",Sample)) %>% 
+                                mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))),
+               type = "robust", title = "Shannon Alpha Diversity")
+
+ggbetweenstats(x = toma,
+               y = Simpson, 
+               data = Div %>% inner_join(metadata %>%                                                                       filter(Sample < 73) %>% 
+                                mutate(Sample = str_c("Sample_",Sample)) %>% 
+                                mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))),
+               type = "robust", title = "Simpson Alpha Diversity")
+
+
+```
+
+## Alpha individual:
+### Simpson
+```{r}
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  filter(Index == "Simpson") %>% 
+  grouped_ggbetweenstats(x = `Cambio climático`, y = Value, grouping.var = toma, type = "robust")
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  filter(Index == "Simpson") %>% 
+  grouped_ggbetweenstats(x = Biocidas, y = Value, grouping.var = toma, type = "robust")
+  
+  
+```
+
+### Shannon
+```{r}
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  filter(Index == "Shannon") %>% 
+  grouped_ggbetweenstats(x = `Cambio climático`, y = Value, grouping.var = toma, type = "robust")
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  filter(Index == "Shannon") %>% 
+  grouped_ggbetweenstats(x = Biocidas, y = Value, grouping.var = toma, type = "robust")
+  
+  
+```
+
+### Chao1
+```{r}
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  filter(Index == "S.chao1") %>% 
+  grouped_ggbetweenstats(x = `Cambio climático`, y = Value, grouping.var = toma, type = "robust")
+
+Div %>% 
+  pivot_longer(names_to = "Index", values_to = "Value", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  filter(`Cambio climático` == "Control" | `Cambio climático` == "Temperatura elevada") %>% 
+  filter(Index == "S.chao1") %>% 
+  grouped_ggbetweenstats(x = Biocidas, y = Value, grouping.var = toma, type = "robust")
+  
+  
+```
+
+# Beta Diversity
+
+```{r}
+
+
+otu_table_sorted <- rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  dplyr::select(-(Subparcela:toma)) %>% column_to_rownames("Sample") %>% as.matrix()
+
+metadata_sorted <- rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  dplyr::select(Sample,Subparcela:Combinada,toma) %>% column_to_rownames("Sample")
+  
+
+map <- metaMDS(otu_table_sorted)
+
+map$points %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  ggplot(aes(x = MDS1, y = MDS2, fill = `Cambio climático`)) + 
+  geom_point(shape = 21, size =3) +
+  theme_light() +
+  scale_fill_d3() +
+  stat_ellipse()
+
+map$points %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  ggplot(aes(x = MDS1, y = MDS2, fill = Biocidas)) + 
+  geom_point(shape = 21, size =3) +
+  theme_light() +
+  scale_fill_d3() +
+  stat_ellipse()
+
+
+map$points %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  ggplot(aes(x = MDS1, y = MDS2, fill = Combinada)) + 
+  geom_point(shape = 21, size =3) +
+  theme_light() +
+  scale_fill_d3() +
+  stat_ellipse()
+
+map$points %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  ggplot(aes(x = MDS1, y = MDS2, fill = toma)) + 
+  geom_point(shape = 21, size =3) +
+  theme_light() +
+  scale_fill_d3() +
+  stat_ellipse()
+
+adonis2(otu_table_sorted ~ Biocidas * `Cambio climático`, metadata_sorted,permutations = 5000)
+adonis2(otu_table_sorted ~ toma * Biocidas * `Cambio climático`, metadata_sorted, permutations = 5000)
+
+
+```
+## Beta Diversity Dispersion
+
+```{r}
+
+Dist <- vegdist(otu_table_sorted, method = "bray")
+
+Dist %>% 
+  as.matrix() %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  pivot_longer(names_to = "Sample2",values_to = "Dist", -Sample) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               select(Sample, Toma1 = toma)) %>% 
+  inner_join(metadata %>% 
+               mutate(Sample2 = str_c("Sample_",Sample)) %>% 
+               select(Sample2, Toma2 = toma)) %>% 
+  filter(Toma1 == Toma2) %>% 
+  filter(Sample > Sample2) %>% 
+  ggbetweenstats(x = Toma1, y = Dist, type = "robust")
+```
+
+```{r}
+bd <- betadisper(Dist, metadata_sorted$toma %>% as.factor())
+permutest(bd, pairwise = T)
+```
+
+
+# Differential analysis
+
+```{r}
+test_table <- rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  pivot_longer(names_to = "Gene", values_to = "Abundance", -Sample) %>% 
+  inner_join(metadata %>% 
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  dplyr::select(-Otros) %>% 
+  group_by(Sample) %>% 
+  mutate(TotalAbundance = sum(Abundance)) %>% 
+  ungroup() %>% 
+  mutate(Freq = (Abundance +1) /TotalAbundance) %>% 
+  mutate(Ab2 = Abundance +1) %>% 
+  group_by(Gene) %>% 
+  mutate(NZeros = sum(Abundance ==0)) %>% 
+  filter(NZeros < 30) %>% 
+  ungroup() %>% 
+  nest_by(Gene) %>% 
+  mutate(model_full = list(gamlss(Freq ~ toma + `Cambio climático` + Biocidas, 
+                             data = data,
+                             family = "BE", 
+                             control = gamlss.control(n.cyc = 200, trace = F)))) %>% 
+  mutate(model_reduced = list(gamlss(Freq ~ 1, 
+                             data = data,
+                             family = "BE", 
+                             control = gamlss.control(n.cyc = 200, trace = F)))) %>%
+  mutate(LRT = list(test_lrt(model_full,model_reduced)))
+  
+
+test_table %>% 
+  dplyr::select(Gene,LRT) %>% 
+  unnest(LRT) %>% 
+  drop_na() %>% 
+  mutate(padj = p.adjust(p,method = "fdr")) %>% 
+  filter(padj < 0.05) %>% 
+  inner_join(labels, by= c("Gene"="template")) %>% 
+  relocate(label)
+
+
+significativos <- test_table %>% 
+  dplyr::select(Gene,LRT) %>% 
+  unnest(LRT) %>% 
+  drop_na() %>% 
+  mutate(padj = p.adjust(p,method = "fdr")) %>% 
+  filter(padj < 0.05) %>% 
+  select(Gene)
+
+```
+
+```{r}
+
+test_table %>% 
+  semi_join(significativos) %>%  
+  mutate(contrast = list(emmeans(model_full, 
+                                 specs = "toma", 
+                                 data = data)%>% 
+                       pairs() %>% 
+                       as.data.frame())) %>% 
+  dplyr::select(Gene,contrast) %>% 
+  unnest(contrast) %>% 
+  ungroup() %>% 
+  mutate(p.adj = p.adjust(p.value, method = "fdr")) %>%
+  filter(p.adj < 0.05) %>% 
+  separate(contrast, c("group1","group2")) 
+```
+
+
+
+```{r fig.width=15, fig.height=15}
+significativos <- test_table %>% 
+  dplyr::select(Gene,LRT) %>% 
+  unnest(LRT) %>% 
+  drop_na() %>% 
+  mutate(padj = p.adjust(p,method = "fdr")) %>% 
+  filter(padj < 0.05) %>% pull(Gene)
+
+test_table %>% 
+  filter(Gene %in% significativos) %>% 
+  inner_join(full_tabla %>% 
+               mutate(label = ifelse(database =="BAC",str_c(Gene_name,template, sep="|"),template)) %>% dplyr::select(template,label) %>% distinct(), by = c("Gene" = "template")) %>% 
+  dplyr::select(Gene,data,label) %>% 
+  unnest(data) %>% 
+  ggplot(aes(x= toma, y = Abundance, fill = toma)) + 
+  geom_violin() +
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~label, scales = "free") +
+  scale_fill_d3() + 
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+
+test_table %>% 
+  filter(Gene %in% significativos) %>% 
+  inner_join(full_tabla %>% 
+               mutate(label = ifelse(database =="BAC",str_c(Gene_name,template, sep="|"),template)) %>% dplyr::select(template,label) %>% distinct(), by = c("Gene" = "template")) %>% 
+  dplyr::select(Gene,data,label) %>% 
+  unnest(data) %>% 
+  ggplot(aes(x= Biocidas, y = Abundance, fill = Biocidas)) + 
+  geom_violin() +
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~label, scales = "free") +
+  scale_fill_d3() + 
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+
+test_table %>% 
+  filter(Gene %in% significativos) %>% 
+  inner_join(full_tabla %>% 
+               mutate(label = ifelse(database =="BAC",str_c(Gene_name,template, sep="|"),template)) %>% dplyr::select(template,label) %>% distinct(), by = c("Gene" = "template")) %>% 
+  dplyr::select(Gene,data,label) %>% 
+  unnest(data) %>% 
+  ggplot(aes(x= `Cambio climático`, y = Abundance, fill = `Cambio climático`)) + 
+  geom_violin() +
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~label, scales = "free") +
+  scale_fill_d3() + 
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+```
+
+
+
+# Top 50
+
+```{r fig.width=15, fig.height=15}
+
+top_50 <- rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  pivot_longer(names_to = "Gene", values_to = "Abundance", -Sample) %>% 
+  inner_join(metadata %>% 
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  dplyr::select(-Otros) %>% 
+  group_by(Sample) %>% 
+  mutate(TotalAbundance = sum(Abundance)) %>% 
+  ungroup() %>% 
+  mutate(Freq = (Abundance +1) /TotalAbundance) %>% 
+  mutate(Ab2 = Abundance +1) %>% 
+  group_by(Gene) %>% 
+    ungroup() %>% 
+  group_by(Gene) %>% 
+  summarise(GeneAbundance = sum(Abundance)) %>% 
+  slice_max(n = 50, order_by = GeneAbundance, with_ties = T)
+
+rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  pivot_longer(names_to = "Gene", values_to = "Abundance", -Sample) %>% 
+  inner_join(metadata %>% 
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  dplyr::select(-Otros) %>% 
+  semi_join(top_50) %>% 
+  select(Sample,Gene,Abundance) %>% 
+  pivot_wider(names_from = Gene, values_from = Abundance, values_fill = 0) %>% 
+  column_to_rownames("Sample") %>% 
+  as.matrix() %>% t() %>% 
+  pheatmap::pheatmap(scale = "row")
+  
+
+```
+
+
+
+
+
+
+# Toma 3 2023-09-14
+## Beta diversity
+```{r}
+
+
+otu_table_sorted_toma3 <- rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>%
+               filter(toma == "2023-09-14") %>% 
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample))) %>% 
+  dplyr::select(-(Subparcela:toma)) %>% column_to_rownames("Sample") %>% as.matrix()
+
+metadata_sorted_toma3 <- rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               filter(toma == "2023-09-14") %>% 
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  dplyr::select(Sample,Subparcela:Combinada,toma) %>% column_to_rownames("Sample")
+  
+
+map_toma3 <- metaMDS(otu_table_sorted_toma3)
+
+map_toma3$points %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>% 
+               filter(toma == "2023-09-14") %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  ggplot(aes(x = MDS1, y = MDS2, fill = `Cambio climático`)) + 
+  geom_point(shape = 21, size =3) +
+  theme_light() +
+  scale_fill_d3() +
+  stat_ellipse()
+
+map$points %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>%
+               filter(toma == "2023-09-14") %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  ggplot(aes(x = MDS1, y = MDS2, fill = Biocidas)) + 
+  geom_point(shape = 21, size =3) +
+  theme_light() +
+  scale_fill_d3() +
+  stat_ellipse()
+
+map$points %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  inner_join(metadata %>%
+              filter(toma == "2023-09-14") %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  ggplot(aes(x = MDS1, y = MDS2, fill = Combinada)) + 
+  geom_point(shape = 21, size =3) +
+  theme_light() +
+  scale_fill_d3() +
+  stat_ellipse()
+
+
+adonis2(otu_table_sorted_toma3 ~ Biocidas * `Cambio climático`, metadata_sorted_toma3, permutations = 5000)
+
+
+```
+## Differential Analysis
+
+```{r}
+test_table_toma3 <- rare_table %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Sample") %>% 
+  pivot_longer(names_to = "Gene", values_to = "Abundance", -Sample) %>% 
+  inner_join(metadata %>% 
+               filter(toma == "2023-09-14") %>%
+               filter(Sample < 73) %>% 
+               mutate(Sample = str_c("Sample_",Sample)) %>% 
+               mutate(Combinada = str_c(`Cambio climático`,"+",Biocidas))) %>% 
+  dplyr::select(-Otros) %>% 
+  group_by(Sample) %>% 
+  mutate(TotalAbundance = sum(Abundance)) %>% 
+  ungroup() %>% 
+  mutate(Freq = (Abundance +1) /TotalAbundance) %>% 
+  mutate(Ab2 = Abundance +1) %>% 
+  group_by(Gene) %>% 
+  mutate(NZeros = sum(Abundance ==0)) %>% 
+  filter(NZeros < 15) %>% 
+  ungroup() %>% 
+  nest_by(Gene) %>% 
+  mutate(model_full = list(gamlss(Freq ~ `Cambio climático` + Biocidas, 
+                             data = data,
+                             family = "BE", 
+                             control = gamlss.control(n.cyc = 200, trace = F)))) %>% 
+  mutate(model_reduced = list(gamlss(Freq ~ 1, 
+                             data = data,
+                             family = "BE", 
+                             control = gamlss.control(n.cyc = 200, trace = F)))) %>%
+  mutate(LRT = list(test_lrt(model_full,model_reduced)))
+  
+
+test_table_toma3 %>% 
+  dplyr::select(Gene,LRT) %>% 
+  unnest(LRT) %>% 
+  drop_na() %>% 
+  mutate(padj = p.adjust(p,method = "fdr")) %>% 
+  filter(padj < 0.05) %>% 
+  inner_join(labels, by= c("Gene"="template")) %>% 
+  relocate(label)
+
+
+significativos_toma3 <- test_table %>% 
+  dplyr::select(Gene,LRT) %>% 
+  unnest(LRT) %>% 
+  drop_na() %>% 
+  mutate(padj = p.adjust(p,method = "fdr")) %>% 
+  filter(padj < 0.05) %>% 
+  select(Gene) %>% pull(Gene)
+```
+
+
+```{r fig.width=15, fig.height=15}
+test_table_toma3 %>% 
+  filter(Gene %in% significativos_toma3) %>% 
+  inner_join(full_tabla %>% 
+               mutate(label = ifelse(database =="BAC",str_c(Gene_name,template, sep="|"),template)) %>% dplyr::select(template,label) %>% distinct(), by = c("Gene" = "template")) %>% 
+  dplyr::select(Gene,data,label) %>% 
+  unnest(data) %>% 
+  ggplot(aes(x= Biocidas, y = Abundance, fill = Biocidas)) + 
+  geom_violin() +
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~label, scales = "free") +
+  scale_fill_d3() + 
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+
+test_table_toma3 %>% 
+  filter(Gene %in% significativos_toma3) %>% 
+  inner_join(full_tabla %>% 
+               mutate(label = ifelse(database =="BAC",str_c(Gene_name,template, sep="|"),template)) %>% dplyr::select(template,label) %>% distinct(), by = c("Gene" = "template")) %>% 
+  dplyr::select(Gene,data,label) %>% 
+  unnest(data) %>% 
+  ggplot(aes(x= `Cambio climático`, y = Abundance, fill = `Cambio climático`)) + 
+  geom_violin() +
+  geom_dotplot(binaxis = "y", stackdir = "center",shape = 21) +
+  facet_wrap(~label, scales = "free") +
+  scale_fill_d3() + 
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+```
+
