@@ -604,8 +604,15 @@ test_table %>%
   unnest(contrast) %>% 
   ungroup() %>% 
   mutate(p.adj = p.adjust(p.value, method = "fdr")) %>%
-  filter(p.adj < 0.05) %>% 
-  separate(contrast, c("group1","group2")) 
+  datatable(extensions = "Buttons", 
+            options = list(paging = TRUE,
+                           scrollX=TRUE, 
+                           searching = TRUE,
+                           ordering = TRUE,
+                           dom = 'Bfrtip',
+                           buttons = c('copy', 'csv', 'excel', 'pdf'),
+                           pageLength=5, 
+                           lengthMenu=c(3,5,10) ))
 ```
 
 
@@ -871,5 +878,49 @@ test_table_toma3 %>%
   facet_wrap(~label, scales = "free") +
   scale_fill_d3() + 
   theme(axis.text.x = element_text(angle = 25, hjust = 1))
+```
+
+```{r}
+test_table_toma3 %>% 
+  filter(Gene %in% significativos_toma3) %>%  
+  mutate(contrast = list(emmeans(model_full, 
+                                 specs = "Biocidas", 
+                                 data = data)%>% 
+                       pairs() %>% 
+                       as.data.frame())) %>% 
+  dplyr::select(Gene,contrast) %>% 
+  unnest(contrast) %>% 
+  ungroup() %>% 
+  mutate(p.adj = p.adjust(p.value, method = "fdr")) %>%
+  datatable(extensions = "Buttons", 
+            options = list(paging = TRUE,
+                           scrollX=TRUE, 
+                           searching = TRUE,
+                           ordering = TRUE,
+                           dom = 'Bfrtip',
+                           buttons = c('copy', 'csv', 'excel', 'pdf'),
+                           pageLength=5, 
+                           lengthMenu=c(3,5,10) ))
+
+test_table_toma3 %>% 
+   filter(Gene %in% significativos_toma3) %>%   
+  mutate(contrast = list(emmeans(model_full, 
+                                 specs = "Cambio climático", 
+                                 data = data)%>% 
+                       pairs() %>% 
+                       as.data.frame())) %>% 
+  dplyr::select(Gene,contrast) %>% 
+  unnest(contrast) %>% 
+  ungroup() %>% 
+  mutate(p.adj = p.adjust(p.value, method = "fdr")) %>%
+  datatable(extensions = "Buttons", 
+            options = list(paging = TRUE,
+                           scrollX=TRUE, 
+                           searching = TRUE,
+                           ordering = TRUE,
+                           dom = 'Bfrtip',
+                           buttons = c('copy', 'csv', 'excel', 'pdf'),
+                           pageLength=5, 
+                           lengthMenu=c(3,5,10) ))
 ```
 
