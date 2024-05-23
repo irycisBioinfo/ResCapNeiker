@@ -841,7 +841,7 @@ test_table_toma3 %>%
                            lengthMenu=c(3,5,10) ))
 
 
-significativos_toma3 <- test_table %>% 
+significativos_toma3 <- test_table_toma3 %>% 
   dplyr::select(Gene,LRT) %>% 
   unnest(LRT) %>% 
   drop_na() %>% 
