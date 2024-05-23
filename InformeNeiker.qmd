@@ -847,13 +847,13 @@ significativos_toma3 <- test_table %>%
   drop_na() %>% 
   mutate(padj = p.adjust(p,method = "fdr")) %>% 
   filter(padj < 0.05) %>% 
-  select(Gene) %>% pull(Gene)
+  select(Gene) 
 ```
 
 
 ```{r fig.width=15, fig.height=15}
 test_table_toma3 %>% 
-  filter(Gene %in% significativos_toma3) %>% 
+  semi_join(significativos_toma3) %>% 
   inner_join(full_tabla %>% 
                mutate(label = ifelse(database =="BAC",str_c(Gene_name,template, sep="|"),template)) %>% dplyr::select(template,label) %>% distinct(), by = c("Gene" = "template")) %>% 
   dplyr::select(Gene,data,label) %>% 
@@ -867,7 +867,7 @@ test_table_toma3 %>%
 
 
 test_table_toma3 %>% 
-  filter(Gene %in% significativos_toma3) %>% 
+  semi_join(significativos_toma3) %>% 
   inner_join(full_tabla %>% 
                mutate(label = ifelse(database =="BAC",str_c(Gene_name,template, sep="|"),template)) %>% dplyr::select(template,label) %>% distinct(), by = c("Gene" = "template")) %>% 
   dplyr::select(Gene,data,label) %>% 
@@ -882,7 +882,7 @@ test_table_toma3 %>%
 
 ```{r}
 test_table_toma3 %>% 
-  filter(Gene %in% significativos_toma3) %>%  
+  semi_join(significativos_toma3) %>%    
   mutate(contrast = list(emmeans(model_full, 
                                  specs = "Biocidas", 
                                  data = data)%>% 
@@ -903,7 +903,7 @@ test_table_toma3 %>%
                            lengthMenu=c(3,5,10) ))
 
 test_table_toma3 %>% 
-   filter(Gene %in% significativos_toma3) %>%   
+  semi_join(significativos_toma3) %>%   
   mutate(contrast = list(emmeans(model_full, 
                                  specs = "Cambio climático", 
                                  data = data)%>% 
